@@ -65,7 +65,8 @@ local LEVELS = {
 local pull_handler = function (zsock, data)
 	--print('data-->', data)
 	
-	local level, appname = tonumber(data:match('^(%d):(appname):'))
+	local level, appname = data:match('^(%d):(%w+):')
+	level = tonumber(level)
 	appname = appname or ''
 	if type(level) ~= 'number' or level > 4 then
 		level = 1
