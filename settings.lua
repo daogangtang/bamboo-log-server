@@ -1,5 +1,5 @@
 
-daemon = true
+--daemon = true
 
 loggers = {
 	
@@ -8,6 +8,7 @@ loggers = {
 
 }
 
-cmd_sub_addr = 'tcp://127.0.0.1:9999'
+log_addr = 'tcp://127.0.0.1:9999'
+cmd_sub_addr = 'tcp://127.0.0.1:10000'
 
 

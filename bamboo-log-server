@@ -98,6 +98,7 @@ local cmd_dispatcher = function (sub_sock, data)
 		os.exit()
 	elseif data == '_cmd_reload_' then
 		print('receive _cmd_reload_, ready to reload config.')
+		config = readSettings({})
 		init(config)
 	end
 end
