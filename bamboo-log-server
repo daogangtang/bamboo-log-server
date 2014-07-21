@@ -1,0 +1,114 @@
+#!/usr/bin/env lua
+
+
+local function readSettings(config)
+        local config = config or {}
+
+        -- try to load settings.lua 
+        local setting_file = loadfile('settings.lua') 
+        if setting_file then
+                setfenv(assert(setting_file), config)()
+        end
+
+        return config
+end
+             
+local config = readSettings({})
+
+if config.daemon then
+	print('bamboo logger started.')
+	require 'daemon'
+	daemon.daemonize('nochdir,nostdfds,noumask0')
+end
+
+--require 'posix'
+
+local zmq = require'bamboo.lib.zmqev'
+local ev = require'ev'
+local loop = ev.Loop.default
+local ctx = zmq.init(loop, 1)
+
+
+-- logging file
+local file_log_driver = require "logging.file"
+local log_dir = config.log_dir or '/tmp'
+local log_prefix = config.log_prefix or 'bamboo'
+
+assert(type(config.loggers) == 'table', '[Error] missing param loggers.')
+local loggers = {}
+function init(config)
+	for appname, v in pairs(config.loggers) do
+		local logfile =  ('%s/%s_%s_'):format(log_dir, log_prefix, appname) .. '%s.log'
+		loggers[appname] = file_log_driver(logfile, "%Y-%m-%d")
+	end
+end
+init(config)
+
+require 'signal'
+signal.signal("SIGTERM", function (...)
+	        print('bamboo_handler receive SIGTERM, os.exit')
+		        os.exit()
+		end)
+-- 0: debug
+-- 1: info
+-- 2: warn
+-- 3: error
+-- 4: fatal
+local LEVELS = {
+	[0] = 'debug',
+	[1] = 'info',
+	[2] = 'warn',
+	[3] = 'error',
+	[4] = 'fatal'
+}
+
+local pull_handler = function (zsock, data)
+	--print('data-->', data)
+	
+	local level, appname = tonumber(data:match('^(%d):(appname):'))
+	appname = appname or ''
+	if type(level) ~= 'number' or level > 4 then
+		level = 1
+		-- 不合规范，记录原始数据
+		data = data
+	else
+		-- 取内容部分
+		data = data:sub(4+#appname)
+	end
+	
+	-- write log
+	logger = loggers[appname]
+	if logger then
+		logger[ LEVELS[level] ](logger, data)
+	end
+
+end
+
+local pull_channel = config.log_addr or 'ipc:///tmp/bamboo_log'
+print(pull_channel)
+-- create pull channel
+local zpull = ctx:pull(pull_handler)
+zpull:bind(pull_channel)
+
+
+local cmd_dispatcher = function (sub_sock, data)
+  	if data == '_cmd_exit_' then
+	        -- reload config 
+		print('receive _cmd_exit_, ready to exit.')
+		os.exit()
+	elseif data == '_cmd_reload_' then
+		print('receive _cmd_reload_, ready to reload config.')
+		init(config)
+	end
+end
+
+
+-- create cmd sub channel
+if config.cmd_sub_addr then
+	local cmd_sub = ctx:sub(cmd_dispatcher)
+	cmd_sub:sub("")
+	cmd_sub:connect(config.cmd_sub_addr)
+end
+
+loop:loop()
+
